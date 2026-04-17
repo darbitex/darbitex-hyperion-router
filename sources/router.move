@@ -8,6 +8,7 @@
 
 module darbitex_hyperion_router::router {
     use std::signer;
+    use aptos_framework::event;
     use aptos_framework::fungible_asset::{Self, Metadata};
     use aptos_framework::object::{Self, Object};
     use aptos_framework::primary_fungible_store;
@@ -16,6 +17,31 @@ module darbitex_hyperion_router::router {
     use dex_contract::pool_v3;
     use hyperion_adapter::adapter as hyperion;
     use aave_pool::flashloan_logic;
+
+    // ===== Events (v0.2) =====
+
+    #[event]
+    struct UserSwapExecuted has drop, store {
+        caller: address,
+        token_in: address,
+        amount_in: u64,
+        amount_out_to_user: u64,
+        baseline_out: u64,
+        surplus_fee: u64,
+        route_kind: u8,   // 0 = best_of_two, 1 = 2hop
+        timestamp: u64,
+    }
+
+    #[event]
+    struct FlashArbExecuted has drop, store {
+        caller: address,
+        borrow_asset: address,
+        borrow_amount: u64,
+        profit: u64,
+        pool_buy: address,
+        pool_sell: address,
+        timestamp: u64,
+    }
 
     // ===== Errors =====
 
@@ -100,12 +126,14 @@ module darbitex_hyperion_router::router {
         // Surplus fee: if routed output > baseline, 10% of surplus → treasury.
         // Baseline sanity: require baseline > 0 so a dead/empty pool can't be
         // gamed to extract fee on the full output.
+        let fee_amount = 0u64;
         if (baseline_out > 0 && total_out > baseline_out) {
             let surplus = total_out - baseline_out;
             let fee = surplus * SURPLUS_FEE_BPS / BPS_DENOM;
             if (fee > 0) {
                 let fa_fee = fungible_asset::extract(&mut fa_out, fee);
                 primary_fungible_store::deposit(TREASURY, fa_fee);
+                fee_amount = fee;
             };
         };
 
@@ -114,6 +142,17 @@ module darbitex_hyperion_router::router {
         assert!(user_out >= min_out_to_user, E_MIN_OUT);
 
         primary_fungible_store::deposit(caller_addr, fa_out);
+
+        event::emit(UserSwapExecuted {
+            caller: caller_addr,
+            token_in: object::object_address(&token_in),
+            amount_in,
+            amount_out_to_user: user_out,
+            baseline_out,
+            surplus_fee: fee_amount,
+            route_kind: 0,
+            timestamp: timestamp::now_seconds(),
+        });
     }
 
     // ===== User-facing: 2-hop =====
@@ -146,12 +185,14 @@ module darbitex_hyperion_router::router {
 
         let total_out = fungible_asset::amount(&fa_out);
 
+        let fee_amount = 0u64;
         if (baseline_out > 0 && total_out > baseline_out) {
             let surplus = total_out - baseline_out;
             let fee = surplus * SURPLUS_FEE_BPS / BPS_DENOM;
             if (fee > 0) {
                 let fa_fee = fungible_asset::extract(&mut fa_out, fee);
                 primary_fungible_store::deposit(TREASURY, fa_fee);
+                fee_amount = fee;
             };
         };
 
@@ -160,6 +201,17 @@ module darbitex_hyperion_router::router {
         assert!(user_out >= min_out_to_user, E_MIN_OUT);
 
         primary_fungible_store::deposit(caller_addr, fa_out);
+
+        event::emit(UserSwapExecuted {
+            caller: caller_addr,
+            token_in: object::object_address(&token_in),
+            amount_in,
+            amount_out_to_user: user_out,
+            baseline_out,
+            surplus_fee: fee_amount,
+            route_kind: 1,
+            timestamp: timestamp::now_seconds(),
+        });
     }
 
     // ===== Keeper: flash-arb cross-tier =====
@@ -218,5 +270,15 @@ module darbitex_hyperion_router::router {
         // 6. Profit check — balance increase >= min_profit
         let bal_after = primary_fungible_store::balance(caller_addr, borrow_asset);
         assert!(bal_after >= bal_before + min_profit, E_INSUFFICIENT_PROFIT);
+
+        event::emit(FlashArbExecuted {
+            caller: caller_addr,
+            borrow_asset: borrow_asset_addr,
+            borrow_amount,
+            profit: bal_after - bal_before,
+            pool_buy: object::object_address(&pool_buy),
+            pool_sell: object::object_address(&pool_sell),
+            timestamp: timestamp::now_seconds(),
+        });
     }
 }
