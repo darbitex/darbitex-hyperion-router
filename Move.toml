@@ -1,0 +1,15 @@
+[package]
+name = "DarbitexHyperionRouter"
+version = "0.1.0"
+upgrade_policy = "compatible"
+authors = ["Rera", "Claude (Anthropic)"]
+
+[addresses]
+darbitex_hyperion_router = "0x4f54bca9333b94a334f0036fea3aa848e7722f7be0e63087cc4814c84797986a"
+hyperion_adapter = "0x5b4bf2a462a90158514ee1345599c764aa9513d117ba233cadf8494a266fa2bb"
+dex_contract = "0x8b4a2c4bb53857c718a04c020b98f8c2e1f99a68b0f57389a8bf5434cd22e05c"
+aave_pool = "0x39ddcd9e1a39fa14f25e3f9ec8a86074d05cc0881cbf667df8a6ee70942016fb"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-framework.git", subdir = "aptos-framework", rev = "mainnet" }
+HyperionAdapter = { local = "../darbitex-beta/arbitrage/hyperion_adapter" }
